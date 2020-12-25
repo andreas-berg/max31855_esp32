@@ -1,0 +1,31 @@
+menu "MAX31855 controller"
+    config MAX31855_SPI_MISO
+        int "GPIO for MISO (Master In Slave Out)"
+        range 0 39
+        default 12
+        help
+            Configure the MAX31855 MISO pin here.
+    config MAX31855_SPI_CLK
+        int "GPIO for CLK (SCK / Serial Clock)"
+        range 0 39
+        default 14
+        help
+            Configure the MAX31855 CLK pin here.
+
+    config MAX31855_SPI_CS
+        int "GPIO for CS (Chip Select)"
+        range 0 39
+        default 15
+        help
+            Configure the MAX31855 CS pin here.
+    choice
+        prompt "SPI Bus." 
+        default MAX31855_SPI_HSPI 
+        help
+              Select the SPI Bus the MAX31855 is attached to.
+        config MAX31855_SPI_HSPI
+            bool "HSPI"
+        config MAX31855_SPI_VSPI
+            bool "VSPI"
+    endchoice
+endmenu
