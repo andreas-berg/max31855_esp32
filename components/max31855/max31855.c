@@ -114,7 +114,6 @@ max31855_cfg_t max31855_init()
 static uint8_t check_thermocouple(uint32_t rawValue)
 {
   if (rawValue == 0) return MAX31855_THERMOCOUPLE_READ_FAIL;
-
   if (rawValue & MAX31855_BITMASK_D16) {
     if ((rawValue >> 2) & 1) return MAX31855_THERMOCOUPLE_SHORT_TO_VCC;
     if ((rawValue >> 1) & 1) return MAX31855_THERMOCOUPLE_SHORT_TO_GND;
