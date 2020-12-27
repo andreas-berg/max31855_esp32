@@ -90,36 +90,22 @@
 #define MAX31855_BITMASK_CJ_DATA_SIGN       0x8000     // sign D15     = 0b00000000000000001000000000000000 = 0x8000
 
 // see https://graphics.stanford.edu/~seander/bithacks.html#ZerosOnRightMultLookup
-<<<<<<< HEAD
 static const int MultiplyDeBruijnBitPosition[32] =
 {
   0, 1, 28, 2, 29, 14, 24, 3, 30, 22, 20, 15, 25, 17, 4, 8,
-=======
-static const int MultiplyDeBruijnBitPosition[32] = 
-{
-  0, 1, 28, 2, 29, 14, 24, 3, 30, 22, 20, 15, 25, 17, 4, 8, 
->>>>>>> 2e10463933e367ae43c64d1d5ea8892a3c5be7b4
   31, 27, 13, 23, 21, 19, 16, 7, 26, 12, 18, 6, 11, 5, 10, 9
 };
 
 // extract masked bits and shift right (f.e. 18 bits for MAX31855_BITMASK_TC_DATA_13BIT, use DeBruijnBitPosition to determine the count of trailing 0s)
 #define MAX31855_EXTRACT_VALUE_WITH_BITMASK(DATA, MASK)  ((DATA & MASK) >> MultiplyDeBruijnBitPosition[((uint32_t)((MASK & -MASK) * 0x077CB531U)) >> 27])
 
-<<<<<<< HEAD
 // Negative tempererature values (sign = 1) are ORed with a mask of 1s to extend the signing bit to the full 16-bit word,
-=======
-// Negative tempererature values (sign = 1) are ORed with a mask of 1s to extend the signing bit to the full 16-bit word, 
->>>>>>> 2e10463933e367ae43c64d1d5ea8892a3c5be7b4
 // f.e. for a 13 bit mask/value length this sign-mask is 0b1110000000000000 = 0xE000
 // the mask is created from 16bit all 1s : (1 << 16) - 1 = 0b111111111111111111 and
 // right-shifting LEN steps (truncating) and left-shifting (zero-padding) the same LEN
 // ORed with VALUE 0b1010101010101 (13bits) | OxE000 = 0b1111010101010101 (16bits)
 // ORed with VALUE 0b10101010101 (11bits)   | OxF800 = 0b1111110101010101 (16bits)
-<<<<<<< HEAD
 // Positive values are returned unchanged.
-=======
-// Positive values are returned unchanged. 
->>>>>>> 2e10463933e367ae43c64d1d5ea8892a3c5be7b4
 #define MAX31855_EXTEND_SIGN(SIGN, VALUE, LEN)  (SIGN == 1)?((((1 << 16)-1) >> LEN << LEN) | VALUE):VALUE
 
 #define MAX31855_TEST_DATA1                 0b00000110010011000110010010010000 // TC: +100.75, CJ: +100.5625, Faults 0 (0x64C6490)
