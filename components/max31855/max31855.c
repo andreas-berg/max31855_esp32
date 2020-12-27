@@ -38,7 +38,7 @@
 #include "max31855.h"
 #include "esp32/rom/ets_sys.h"  // for ets_delay_us()
 
-// #define DEBUG 1
+#define DEBUG 0
 
 static const char *TAG = "max31855";
 
@@ -106,23 +106,19 @@ max31855_cfg_t max31855_init()
     - 3 not connected
     NOTE:
     - bit D16 is normally low & goes high if thermocouple is open, shorted to GND or VCC
-    - bit D2  is normally low & goes high to indicate a hermocouple short to VCC
-    - bit D1  is normally low & goes high to indicate a thermocouple short to GND
-    - bit D0  is normally low & goes high to indicate a thermocouple open circuit
+    - bit D2  is normally low & goes high to indicate a hermocouple short to VCC (SCV Fault)
+    - bit D1  is normally low & goes high to indicate a thermocouple short to GND (SCG Fault)
+    - bit D0  is normally low & goes high to indicate a thermocouple open circuit (OC Fault)
 */
 /**************************************************************************/
 static uint8_t check_thermocouple(uint32_t rawValue)
 {
   if (rawValue == 0) return MAX31855_THERMOCOUPLE_READ_FAIL;
-  // (((a >> 3) & 1) << 3) | (((a >> 2) & 1) << 2) | (((a >> 1) & 1) << 1) | (a & 1);
-  uint8_t ls3b = 0;
-  for (uint8_t i = 0; i < 3; i++) {
-    ls3b |= (((rawValue >> i) & 1) << i);
-  }
-  if (ls3b > 0) {
-    if ((ls3b >> 2) & 1) return MAX31855_THERMOCOUPLE_SHORT_TO_VCC;
-    if ((ls3b >> 1) & 1) return MAX31855_THERMOCOUPLE_SHORT_TO_GND;
-    if ((ls3b >> 0) & 1) return MAX31855_THERMOCOUPLE_NOT_CONNECTED;
+  
+  if (rawValue & MAX31855_BITMASK_D16) {
+    if ((rawValue >> 2) & 1) return MAX31855_THERMOCOUPLE_SHORT_TO_VCC;
+    if ((rawValue >> 1) & 1) return MAX31855_THERMOCOUPLE_SHORT_TO_GND;
+    if ((rawValue >> 0) & 1) return MAX31855_THERMOCOUPLE_NOT_CONNECTED;
     else return MAX31855_THERMOCOUPLE_UNKNOWN;
   }
   return MAX31855_THERMOCOUPLE_OK;
@@ -182,7 +178,7 @@ static uint32_t read_raw_data()
 
   for (uint8_t i = 0; i < 4; i++) rawData = (rawData << 8) | (uint8_t)spi_transaction.rx_data[i]; // combine rx_data buffer (uint8_t[4]) to a single uint32_t 
 #if defined DEBUG
-  printf(" "DEBUG_4BYTE_TO_BINARY_PATTERN, DEBUG_4BYTE_TO_BINARY(rawData));
+  printf(" "DEBUG_4BYTE_TO_BINARY_PATTERN, rawData, DEBUG_BYTE4_TO_BINARY(rawData), DEBUG_BYTE3_TO_BINARY(rawData), DEBUG_BYTE2_TO_BINARY(rawData), DEBUG_BYTE1_TO_BINARY(rawData));
 #endif
   return rawData;
 }
@@ -209,31 +205,34 @@ uint8_t max31855_get_temperature(max31855_cfg_t *max31855)
   // spi_device_handle_t spi = max31855->spi;
   uint32_t rawData = read_raw_data(max31855->spi);
 
-  if (check_thermocouple(rawData) != MAX31855_THERMOCOUPLE_OK) return MAX31855_THERMOCOUPLE_READ_FAIL;
-
-  // check the 3 LSBs for faults
-
-  float tc_temperature = 0; // in centigrades
-  if (rawData & 0x80000000) {
-    // Negative value, drop the lower 18 bits and explicitly extend sign bits.
-    tc_temperature = (int16_t)(0xFFFFC000 | ((rawData >> 18) & 0x00003FFF));
-  } else {  // Positive value, 
-    tc_temperature = (int16_t)(rawData >> 18); // just drop the lower 18 bits.
+  uint8_t err = check_thermocouple(rawData);
+  if (err != MAX31855_THERMOCOUPLE_OK) {
+    max31855->fault = (uint8_t)((rawData & MAX31855_BITMASK_D16) >> (16-3) | (rawData & MAX31855_BITMASK_D210)); // extract fault 4bit D16+D2+D1+D0 
+    return err;
   }
-  tc_temperature *= MAX31855_THERMOCOUPLE_RESOLUTION; // LSB = 0.25 degrees C
   
-  float cj_temperature = 0;
-  // check sign bit!
-  if ((rawData >> 4) & 0x800) {
-    // Convert to negative value by extending sign and casting to signed type.
-    cj_temperature = (int16_t)(0xF800 | ((rawData >> 4) & 0x7FF)); 
-  } else { // positive value
-    cj_temperature = (int16_t)(rawData >> 4) & 0x7FF; // ignore bottom 4 bits - they're just thermocouple data and pull the bottom 11 bits off
-  }
-  cj_temperature *= MAX31855_COLD_JUNCTION_RESOLUTION; // LSB = 0.0625 degrees C
+  // Read thermocouple temperature data
+  uint32_t value = MAX31855_EXTRACT_VALUE_WITH_BITMASK(rawData, MAX31855_BITMASK_TC_DATA_13BIT);
+  uint32_t sign = MAX31855_EXTRACT_VALUE_WITH_BITMASK(rawData, MAX31855_BITMASK_TC_DATA_SIGN);
 #if defined DEBUG
-  printf(" Temp: %0.2f CJTemp: %0.2f\n", tc_temperature, cj_temperature );
+   printf(" TC_TEMP "DEBUG_2BYTE_TO_BINARY_PATTERN, value, DEBUG_BYTE2_TO_BINARY(value), DEBUG_BYTE1_TO_BINARY(value));
+   printf(" TC_SIGN 0x%02x",sign);
 #endif
+  float tc_temperature = (float)(MAX31855_THERMOCOUPLE_RESOLUTION * (int16_t)(MAX31855_EXTEND_SIGN(sign, value, 13)));
+
+  // Read internal (cold junction) temperature data
+  value = MAX31855_EXTRACT_VALUE_WITH_BITMASK(rawData, MAX31855_BITMASK_CJ_DATA_11BIT);
+  sign = MAX31855_EXTRACT_VALUE_WITH_BITMASK(rawData, MAX31855_BITMASK_CJ_DATA_SIGN);
+#if defined DEBUG
+   printf(" CJ_TEMP "DEBUG_2BYTE_TO_BINARY_PATTERN, value, DEBUG_BYTE2_TO_BINARY(value), DEBUG_BYTE1_TO_BINARY(value));
+   printf(" CJ_SIGN 0x%02x",sign);
+#endif
+  float cj_temperature = (float)(MAX31855_COLD_JUNCTION_RESOLUTION * (int16_t)(MAX31855_EXTEND_SIGN(sign, value, 11)));
+
+#if defined DEBUG
+  printf(" TC: %0.4f°C CJ: %0.4f°C\n", tc_temperature, cj_temperature );
+#endif
+
   max31855->thermocouple_c = tc_temperature;
   max31855->thermocouple_f = (1.8 * tc_temperature) + 32.0;
   max31855->coldjunction_c = cj_temperature;
